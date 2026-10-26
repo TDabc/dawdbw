@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>动物问答互动卡</title>
+    <style>
+        /* 阿里妈妈方圆体（阿里巴巴开源免费商用字体）：页面文字统一使用，避免字体版权问题 */
+        @font-face {
+            font-family: 'Alimama FangYuanTi VF';
+            src: url('assets/AlimamaFangYuanTiVF-Thin.woff2') format('woff2');
+            font-weight: 200 700;
+            font-display: swap;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html {
+            /* 禁止安卓微信(X5)内核按字体设置自动放大文字；X5存在“最小字号”机制，
+               英文小字号会被强制放大到约12px导致超宽截断，故改用渲染级transform缩放兜底 */
+            -webkit-text-size-adjust: none;
+            text-size-adjust: none;
+        }
+        body {
+            font-family: 'Alimama FangYuanTi VF', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            background-color: #f0f2f5;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+        h1 { color: #333; margin-bottom: 15px; font-size: 22px; text-align: center; }
+        
+        /* 模式切换按钮组（3个按钮适配） */
+        .mode-selector {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 15px;
+            width: 100%;
+            max-width: 360px;
+            justify-content: center;
+        }
+        .mode-btn {
+            flex: 1;
+            padding: 10px 0;
+            border: 2px solid #4CAF50;
+            background-color: white;
+            color: #4CAF50;
+            border-radius: 25px;
+            font-size: 15px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-align: center;
+        }
+        .mode-btn.active {
+            background-color: #4CAF50;
+            color: white;
+            box-shadow: 0 2px 8px rgba(76, 175, 80, 0.3);
+        }
+        .mode-btn:active { transform: scale(0.95); }
+        
+        .mode-hint {
+            font-size: 14px;
+            color: #5d6b73;
+            margin-bottom: 12px;
+            text-align: center;
+            background: #e8f5e9;
+            padding: 6px 16px;
+            border-radius: 12px;
+        }
+        
+        .card-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
+            width: 100%;
+            max-width: 420px;
+        }
+        .card {
+            background-color: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            cursor: pointer;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            position: relative;
+            /* 卡片固定比例：上方图片正方形占4份 + 下方文字区占1份 → 宽:高 = 4:5 */
+            aspect-ratio: 4 / 5;
+        }
+        .card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15); }
+        .card:active { transform: scale(0.97); }
+
+        /* 图片区：正方形，高度占卡片的4份 */
+        .card-img {
+            flex: 0 0 auto;
+            aspect-ratio: 1 / 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            padding: 4px;
+        }
+        .card-img img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            display: block;
+            pointer-events: none;
+            image-rendering: -webkit-optimize-contrast;
+            image-rendering: crisp-edges;
+        }
+
+        /* 文字区：占卡片高度的1份（约卡宽1/4），单行显示 */
+        .card-text {
+            flex: 1 1 0;
+            min-height: 0;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 1px 4px 2px;
+            text-align: center;
+            background: #fff;
+        }
+        /* 文字块：包住中英两行，缩放基于它的实际渲染宽度/高度测量 */
+        .card-text .block {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            transform-origin: center center;
+        }
+        .card-text .fit {
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            line-height: 1.2;
+            overflow: visible;
+        }
+        /* 互动模式（中文在前）：中文行高1.0、英文行高1.15，腾出高度让英文不至于太小 */
+        .card-text.zh-first .fit:first-child { line-height: 1.0; }
+        .card-text.zh-first .fit:last-child { line-height: 1.15; }
+        .card-text .zh, .card-text .en {
+            display: inline-block;
+            white-space: nowrap;
+            max-width: none;
+        }
+        .card-text .zh {
+            line-height: 1.2;
+            font-family: 'Alimama FangYuanTi VF', "PingFang SC", "Microsoft YaHei", sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        .card-text .en {
+            line-height: 1.2;
+            font-family: 'Alimama FangYuanTi VF', Arial, Helvetica, sans-serif;
+            letter-spacing: 0;
+        }
+        /* 单词/句子模式：英文在前，英文比中文稍大 */
+        .card-text.en-first .en {
+            font-size: 8px;
+            font-weight: 700;
+            color: #0e6e88;
+        }
+        .card-text.en-first .zh {
+            font-size: 8px;
+            color: #5d6b73;
+            margin-top: 1px;
+        }
+        /* 互动模式：中文在前，中文比英文稍大 */
+        .card-text.zh-first .zh {
+            font-size: 8px;
+            font-weight: 700;
+            color: #0e6e88;
+        }
+        .card-text.zh-first .en {
+            font-size: 8px;
+            color: #5d6b73;
+            margin-top: 1px;
+        }
+        audio { display: none; }
+        
+        footer { margin-top: 18px; font-size: 13px; color: #888; text-align: center; }
+        
+        /* 激活遮罩层样式 */
+        #activationOverlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);
+            display: flex; align-items: center; justify-content: center; z-index: 999;
+        }
+        .overlay-card {
+            background: white; padding: 30px 20px; border-radius: 16px;
+            text-align: center; max-width: 320px; width: 90%;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            animation: popIn 0.3s ease;
+        }
+        @keyframes popIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+        .overlay-icon { font-size: 48px; margin-bottom: 10px; }
+        .overlay-title { font-size: 20px; font-weight: bold; margin-bottom: 10px; color: #333; }
+        .overlay-desc { font-size: 14px; color: #666; margin-bottom: 20px; line-height: 1.5; }
+        .activate-btn {
+            background: #4CAF50; color: white; border: none; padding: 12px 30px;
+            border-radius: 25px; font-size: 16px; font-weight: bold; cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>动物问答互动卡</h1>
+
+    <div class="mode-selector">
+        <button class="mode-btn active" id="wordModeBtn">单词</button>
+        <button class="mode-btn" id="sentenceModeBtn">句子</button>
+        <button class="mode-btn" id="interactiveModeBtn">互动</button>
+    </div>
+
+    <div class="mode-hint" id="modeHint">当前模式：单词</div>
+
+    <div class="card-grid" id="flashcardContainer"></div>
+
+    <footer>点击图片听发音 · 切换模式听不同音频</footer>
+
+    <!-- 首次激活遮罩 -->
+    <div id="activationOverlay">
+        <div class="overlay-card">
+            <div class="overlay-icon">👆</div>
+            <div class="overlay-title">欢迎来到动物问答互动卡</div>
+            <div class="overlay-desc">点击下方按钮激活音频播放<br>之后点击任意卡片即可听到发音</div>
+            <button class="activate-btn" id="activateBtn">开始学习</button>
+        </div>
+    </div>
+
+    <script>
+        const container = document.getElementById('flashcardContainer');
+        const wordBtn = document.getElementById('wordModeBtn');
+        const sentenceBtn = document.getElementById('sentenceModeBtn');
+        const interactiveBtn = document.getElementById('interactiveModeBtn');
+        const modeHint = document.getElementById('modeHint');
+        const overlay = document.getElementById('activationOverlay');
+        const activateBtn = document.getElementById('activateBtn');
+
+        let currentMode = 'word'; // 'word' | 'sentence' | 'interactive'
+        let isActivated = false;
+        const audioElements = [];
+
+        // ===== 单词模式数据（90个动物单词，英文在前，来自内容表） =====
+        const wordVocab = [
+            { en: "elephant", zh: "大象" },
+            { en: "lion", zh: "狮子" },
+            { en: "tiger", zh: "老虎" },
+            { en: "leopard", zh: "豹子" },
+            { en: "bear", zh: "熊" },
+            { en: "panda", zh: "熊猫" },
+            { en: "deer", zh: "鹿" },
+            { en: "kangaroo", zh: "袋鼠" },
+            { en: "camel", zh: "骆驼" },
+            { en: "giraffe", zh: "长颈鹿" },
+            { en: "zebra", zh: "斑马" },
+            { en: "hippo", zh: "河马" },
+            { en: "rhino", zh: "犀牛" },
+            { en: "gorilla", zh: "大猩猩" },
+            { en: "buffalo", zh: "水牛" },
+            { en: "donkey", zh: "驴" },
+            { en: "monkey", zh: "猴子" },
+            { en: "wolf", zh: "狼" },
+            { en: "sloth", zh: "树懒" },
+            { en: "fox", zh: "狐狸" },
+            { en: "squirrel", zh: "松鼠" },
+            { en: "skunk", zh: "臭鼬" },
+            { en: "hedgehog", zh: "刺猬" },
+            { en: "rabbit", zh: "兔子" },
+            { en: "koala", zh: "考拉" },
+            { en: "lizard", zh: "蜥蜴" },
+            { en: "bat", zh: "蝙蝠" },
+            { en: "snake", zh: "蛇" },
+            { en: "crocodile", zh: "鳄鱼" },
+            { en: "raccoon", zh: "浣熊" },
+            { en: "otter", zh: "水獭" },
+            { en: "hamster", zh: "仓鼠" },
+            { en: "frog", zh: "青蛙" },
+            { en: "mouse", zh: "老鼠" },
+            { en: "turtle", zh: "乌龟" },
+            { en: "polar bear", zh: "北极熊" },
+            { en: "penguin", zh: "企鹅" },
+            { en: "dolphin", zh: "海豚" },
+            { en: "seal", zh: "海豹" },
+            { en: "whale", zh: "鲸鱼" },
+            { en: "shark", zh: "鲨鱼" },
+            { en: "octopus", zh: "章鱼" },
+            { en: "seahorse", zh: "海马" },
+            { en: "crab", zh: "螃蟹" },
+            { en: "fish", zh: "鱼" },
+            { en: "jellyfish", zh: "水母" },
+            { en: "shrimp", zh: "虾" },
+            { en: "starfish", zh: "海星" },
+            { en: "lobster", zh: "龙虾" },
+            { en: "clam", zh: "蛤蜊" },
+            { en: "cow", zh: "牛" },
+            { en: "horse", zh: "马" },
+            { en: "sheep", zh: "绵羊" },
+            { en: "pig", zh: "猪" },
+            { en: "goat", zh: "山羊" },
+            { en: "dog", zh: "狗" },
+            { en: "cat", zh: "猫" },
+            { en: "goose", zh: "鹅" },
+            { en: "duck", zh: "鸭子" },
+            { en: "hen", zh: "母鸡" },
+            { en: "rooster", zh: "公鸡" },
+            { en: "chicken", zh: "鸡" },
+            { en: "toucan", zh: "巨嘴鸟" },
+            { en: "turkey", zh: "火鸡" },
+            { en: "eagle", zh: "老鹰" },
+            { en: "woodpecker", zh: "啄木鸟" },
+            { en: "owl", zh: "猫头鹰" },
+            { en: "pigeon", zh: "鸽子" },
+            { en: "crow", zh: "乌鸦" },
+            { en: "parrot", zh: "鹦鹉" },
+            { en: "bird", zh: "鸟" },
+            { en: "peacock", zh: "孔雀" },
+            { en: "swan", zh: "天鹅" },
+            { en: "seagull", zh: "海鸥" },
+            { en: "ostrich", zh: "鸵鸟" },
+            { en: "caterpillar", zh: "毛毛虫" },
+            { en: "grasshopper", zh: "蚱蜢" },
+            { en: "butterfly", zh: "蝴蝶" },
+            { en: "beetle", zh: "甲虫" },
+            { en: "firefly", zh: "萤火虫" },
+            { en: "bee", zh: "蜜蜂" },
+            { en: "ladybug", zh: "瓢虫" },
+            { en: "dragonfly", zh: "蜻蜓" },
+            { en: "fly", zh: "苍蝇" },
+            { en: "mosquito", zh: "蚊子" },
+            { en: "ant", zh: "蚂蚁" },
+            { en: "spider", zh: "蜘蛛" },
+            { en: "cockroach", zh: "蟑螂" },
+            { en: "earthworm", zh: "蚯蚓" },
+            { en: "snail", zh: "蜗牛" }
+        ];
+
+        // ===== 句子模式数据（90个动物描述句，英文在前，来自内容表） =====
+        const sentenceData = [
+            { en: "An elephant is big", zh: "大象很大" },
+            { en: "A lion is strong", zh: "狮子很强壮" },
+            { en: "A tiger can roar", zh: "老虎会吼叫" },
+            { en: "A leopard is fast", zh: "豹子跑得很快" },
+            { en: "A bear is fluffy", zh: "熊毛茸茸的" },
+            { en: "A panda is cute", zh: "熊猫很可爱" },
+            { en: "A deer can leap", zh: "鹿能跳跃" },
+            { en: "A kangaroo can hop", zh: "袋鼠会跳" },
+            { en: "A camel can walk", zh: "骆驼可以走路" },
+            { en: "A giraffe is tall", zh: "长颈鹿个子很高" },
+            { en: "A zebra is striped", zh: "斑马身上有条纹" },
+            { en: "A hippo is heavy", zh: "河马很重" },
+            { en: "A rhino can run", zh: "犀牛会跑" },
+            { en: "A gorilla is black", zh: "大猩猩是黑色的" },
+            { en: "A buffalo can run", zh: "水牛能跑" },
+            { en: "A donkey can walk", zh: "驴能走路" },
+            { en: "A monkey can swing", zh: "猴子会荡秋千" },
+            { en: "A wolf can howl", zh: "狼可以嚎叫" },
+            { en: "A sloth is slow", zh: "树懒行动缓慢" },
+            { en: "A fox is clever", zh: "狐狸很聪明" },
+            { en: "A squirrel can climb", zh: "松鼠会爬树" },
+            { en: "A skunk is stinky", zh: "臭鼬很臭" },
+            { en: "A hedgehog is spiky", zh: "刺猬身上长着刺" },
+            { en: "A rabbit is timid", zh: "兔子很胆小" },
+            { en: "I can see a koala", zh: "我看到一只考拉了" },
+            { en: "A lizard can crawl", zh: "蜥蜴会爬行" },
+            { en: "A bat can hang upside down", zh: "蝙蝠可以倒挂" },
+            { en: "A snake can slither", zh: "蛇会蜿蜒爬行" },
+            { en: "A crocodile is rough", zh: "鳄鱼很粗糙" },
+            { en: "A raccoon can climb", zh: "浣熊会爬树" },
+            { en: "An otter can swim", zh: "水獭会游泳" },
+            { en: "A hamster can nibble", zh: "仓鼠可以啃食" },
+            { en: "A frog can jump", zh: "青蛙能跳" },
+            { en: "A mouse is small", zh: "老鼠很小" },
+            { en: "A turtle is slow", zh: "乌龟行动缓慢" },
+            { en: "A polar bear is white", zh: "北极熊是白色的" },
+            { en: "A penguin is chubby", zh: "企鹅很胖" },
+            { en: "A dolphin is intelligent", zh: "海豚很聪明" },
+            { en: "A seal can swim", zh: "海豹会游泳" },
+            { en: "A whale is enormous", zh: "鲸鱼体型巨大" },
+            { en: "A shark is fierce", zh: "鲨鱼很凶猛" },
+            { en: "An octopus is clever", zh: "章鱼很聪明" },
+            { en: "A seahorse is small", zh: "海马体型很小" },
+            { en: "A crab can crawl", zh: "螃蟹会爬" },
+            { en: "A fish can swim", zh: "鱼会游泳" },
+            { en: "A jellyfish is soft", zh: "水母是软的" },
+            { en: "I can find a shrimp", zh: "我能找到一只虾" },
+            { en: "I can see a starfish", zh: "我看到了一只海星" },
+            { en: "I can find a lobster", zh: "我能找到一只龙虾" },
+            { en: "A clam is slow", zh: "蛤蜊行动缓慢" },
+            { en: "A cow is big", zh: "牛个头很大" },
+            { en: "A horse can run", zh: "马能跑" },
+            { en: "I can find a sheep", zh: "我能找到一只绵羊" },
+            { en: "A pig is pink", zh: "猪是粉红色的" },
+            { en: "A goat can climb", zh: "山羊会爬山" },
+            { en: "A dog can bark", zh: "狗会叫" },
+            { en: "A cat is soft", zh: "猫很柔软" },
+            { en: "I can see a goose", zh: "我看到了一只鹅" },
+            { en: "A duck can swim", zh: "鸭子会游泳" },
+            { en: "A hen can lay eggs", zh: "母鸡会下蛋" },
+            { en: "A rooster can crow", zh: "公鸡会打鸣" },
+            { en: "I can see some chickens", zh: "我看到几只鸡了" },
+            { en: "I can find a toucan", zh: "我能找到一只巨嘴鸟" },
+            { en: "A turkey can run", zh: "火鸡会跑" },
+            { en: "An eagle can fly", zh: "老鹰能够飞翔" },
+            { en: "I can find a woodpecker", zh: "我能找到一只啄木鸟" },
+            { en: "An owl is wise", zh: "猫头鹰很聪明" },
+            { en: "A pigeon can fly", zh: "鸽子能飞" },
+            { en: "A crow is black", zh: "乌鸦是黑色的" },
+            { en: "A parrot is smart", zh: "鹦鹉很聪明" },
+            { en: "A bird can fly", zh: "鸟儿会飞" },
+            { en: "A peacock is beautiful", zh: "孔雀很漂亮" },
+            { en: "A swan is white", zh: "天鹅是白色的" },
+            { en: "A seagull can soar", zh: "海鸥可以翱翔" },
+            { en: "An ostrich is tall", zh: "鸵鸟个子很高" },
+            { en: "A caterpillar can crawl", zh: "毛毛虫会爬" },
+            { en: "A grasshopper can jump", zh: "蚱蜢能跳" },
+            { en: "A butterfly is pretty", zh: "蝴蝶很漂亮" },
+            { en: "I can see a beetle", zh: "我看到一只甲虫" },
+            { en: "A firefly can glow", zh: "萤火虫会发光" },
+            { en: "A bee is hardworking", zh: "蜜蜂很勤劳" },
+            { en: "A ladybug is red", zh: "瓢虫是红色的" },
+            { en: "A dragonfly can fly", zh: "蜻蜓能飞" },
+            { en: "A fly is small", zh: "苍蝇很小" },
+            { en: "A mosquito is light", zh: "蚊子很轻" },
+            { en: "An ant is tiny", zh: "蚂蚁很小" },
+            { en: "I can see a spider", zh: "我看到一只蜘蛛了" },
+            { en: "A cockroach is quick", zh: "蟑螂动作很快" },
+            { en: "An earthworm can crawl", zh: "蚯蚓可以爬行" },
+            { en: "A snail is slow", zh: "蜗牛行动缓慢" }
+        ];
+
+        // ===== 互动模式数据（90个动物问句，中文在前，来自内容表） =====
+        const animalQuestions = [
+            { zh: "大象是什么样的？", en: "What is an elephant like?" },
+            { zh: "狮子是什么样的？", en: "What is a lion like?" },
+            { zh: "老虎能做什么？", en: "What can a tiger do?" },
+            { zh: "豹子是什么样的？", en: "What is a leopard like?" },
+            { zh: "熊是什么样的？", en: "What is a bear like?" },
+            { zh: "熊猫是什么样的？", en: "What is a panda like?" },
+            { zh: "鹿能做什么？", en: "What can a deer do?" },
+            { zh: "袋鼠能做什么？", en: "What can a kangaroo do?" },
+            { zh: "骆驼能做什么？", en: "What can a camel do?" },
+            { zh: "长颈鹿是什么样的？", en: "What is a giraffe like?" },
+            { zh: "斑马是什么样的？", en: "What is a zebra like?" },
+            { zh: "河马是什么样的？", en: "What is a hippo like?" },
+            { zh: "犀牛能做什么？", en: "What can a rhino do?" },
+            { zh: "大猩猩是什么颜色的？", en: "What color is a gorilla?" },
+            { zh: "水牛能做什么？", en: "What can a buffalo do?" },
+            { zh: "驴能做什么？", en: "What can a donkey do?" },
+            { zh: "猴子能做什么？", en: "What can a monkey do?" },
+            { zh: "狼能做什么？", en: "What can a wolf do?" },
+            { zh: "树懒是什么样的？", en: "What is a sloth like?" },
+            { zh: "狐狸是什么样的？", en: "What is a fox like?" },
+            { zh: "松鼠能做什么？", en: "What can a squirrel do?" },
+            { zh: "臭鼬是什么样的？", en: "What is a skunk like?" },
+            { zh: "刺猬是什么样的？", en: "What is a hedgehog like?" },
+            { zh: "兔子是什么样的？", en: "What is a rabbit like?" },
+            { zh: "你能看到考拉吗？", en: "Can you see a koala?" },
+            { zh: "蜥蜴能做什么？", en: "What can a lizard do?" },
+            { zh: "蝙蝠能做什么？", en: "What can a bat do?" },
+            { zh: "蛇能做什么？", en: "What can a snake do?" },
+            { zh: "鳄鱼是什么样的？", en: "What is a crocodile like?" },
+            { zh: "浣熊能做什么？", en: "What can a raccoon do?" },
+            { zh: "水獭能做什么？", en: "What can an otter do?" },
+            { zh: "仓鼠能做什么？", en: "What can a hamster do?" },
+            { zh: "青蛙能做什么？", en: "What can a frog do?" },
+            { zh: "老鼠是什么样的？", en: "What is a mouse like?" },
+            { zh: "乌龟是什么样的？", en: "What is a turtle like?" },
+            { zh: "北极熊是什么颜色的？", en: "What color is a polar bear?" },
+            { zh: "企鹅是什么样的？", en: "What is a penguin like?" },
+            { zh: "海豚是什么样的？", en: "What is a dolphin like?" },
+            { zh: "海豹能做什么？", en: "What can a seal do?" },
+            { zh: "鲸鱼是什么样的？", en: "What is a whale like?" },
+            { zh: "鲨鱼是什么样的？", en: "What is a shark like?" },
+            { zh: "章鱼是什么样的？", en: "What is an octopus like?" },
+            { zh: "海马是什么样的？", en: "What is a seahorse like?" },
+            { zh: "螃蟹能做什么？", en: "What can a crab do?" },
+            { zh: "鱼能做什么？", en: "What can a fish do?" },
+            { zh: "水母是什么样的？", en: "What is a jellyfish like?" },
+            { zh: "你能找到一只虾吗？", en: "Can you find a shrimp?" },
+            { zh: "你看到海星了吗？", en: "Can you see a starfish?" },
+            { zh: "你可以找到一只龙虾吗？", en: "Can you find a lobster?" },
+            { zh: "蛤蜊是什么样的？", en: "What is a clam like?" },
+            { zh: "牛是什么样的？", en: "What is a cow like?" },
+            { zh: "马能做什么？", en: "What can a horse do?" },
+            { zh: "你能找到一只绵羊吗？", en: "Can you find a sheep?" },
+            { zh: "猪是什么颜色的？", en: "What color is a pig?" },
+            { zh: "山羊能做什么？", en: "What can a goat do?" },
+            { zh: "狗能做什么？", en: "What can a dog do?" },
+            { zh: "猫是什么样的？", en: "What is a cat like?" },
+            { zh: "你看到鹅了吗？", en: "Can you see a goose?" },
+            { zh: "鸭子能做什么？", en: "What can a duck do?" },
+            { zh: "母鸡能做什么？", en: "What can a hen do?" },
+            { zh: "公鸡能做什么？", en: "What can a rooster do?" },
+            { zh: "你能看到几只鸡吗？", en: "Can you see some chickens?" },
+            { zh: "你能找到一只巨嘴鸟吗？", en: "Can you find a toucan?" },
+            { zh: "火鸡能做什么？", en: "What can a turkey do?" },
+            { zh: "老鹰能做什么？", en: "What can an eagle do?" },
+            { zh: "你能找到一只啄木鸟吗？", en: "Can you find a woodpecker?" },
+            { zh: "猫头鹰是什么样的？", en: "What is an owl like?" },
+            { zh: "鸽子能做什么？", en: "What can a pigeon do?" },
+            { zh: "乌鸦是什么颜色的？", en: "What color is a crow?" },
+            { zh: "鹦鹉是什么样的？", en: "What is a parrot like?" },
+            { zh: "鸟能做什么呢？", en: "What can a bird do?" },
+            { zh: "孔雀是什么样的？", en: "What is a peacock like?" },
+            { zh: "天鹅是什么颜色的？", en: "What color is a swan?" },
+            { zh: "海鸥能做什么？", en: "What can a seagull do?" },
+            { zh: "鸵鸟是什么样的？", en: "What is an ostrich like?" },
+            { zh: "毛毛虫能做什么？", en: "What can a caterpillar do?" },
+            { zh: "蚱蜢能做什么？", en: "What can a grasshopper do?" },
+            { zh: "蝴蝶是什么样的？", en: "What is a butterfly like?" },
+            { zh: "你看到一只甲虫了吗？", en: "Can you see a beetle?" },
+            { zh: "萤火虫能做什么？", en: "What can a firefly do?" },
+            { zh: "蜜蜂是什么样的？", en: "What is a bee like?" },
+            { zh: "瓢虫是什么颜色的？", en: "What color is a ladybug?" },
+            { zh: "蜻蜓能做什么？", en: "What can a dragonfly do?" },
+            { zh: "苍蝇是什么样的？", en: "What is a fly like?" },
+            { zh: "蚊子是什么样的？", en: "What is a mosquito like?" },
+            { zh: "蚂蚁是什么样的？", en: "What is an ant like?" },
+            { zh: "你看到蜘蛛了吗？", en: "Can you see a spider?" },
+            { zh: "蟑螂是什么样的？", en: "What is a cockroach like?" },
+            { zh: "蚯蚓能做什么？", en: "What can an earthworm do?" },
+            { zh: "蜗牛是什么样的？", en: "What is a snail like?" }
+        ];
+
+        // 模式对应的音频后缀：单词=无，句子=a，互动=b
+        const modeSuffixMap = {
+            'word': '',
+            'sentence': 'a',
+            'interactive': 'b'
+        };
+
+        function getAudioSrc(index, mode) {
+            const suffix = modeSuffixMap[mode];
+            return suffix ? `${index}${suffix}.mp3` : `${index}.mp3`;
+        }
+
+        function getModeData(mode) {
+            if (mode === 'word') return wordVocab;
+            if (mode === 'sentence') return sentenceData;
+            return animalQuestions;
+        }
+
+        // 字号确定式计算 + 渲染级transform块级缩放兜底：
+        // 华为微信X5内核存在“最小字号”机制，小字号英文会被强制放大后超宽截断，
+        // 字号调小无效；transform是渲染级缩放，X5无法放大它。
+        // 每张卡片的英文+中文两行包在 .block 里，按实际渲染宽/高测量后整体等比缩放，
+        // 保证文字宽度永远不超过卡片（=图片）宽度，同时高度不超出文字区。
+        // 句子模式：英文尽量调大、中文调小；互动模式：中文尽量调大、英文调小但保持可读。
+        // 单词模式参数保持默认（enFactor 0.85 / zhFactor 1.05 / zhCap 12）。
+        function sizeCardTexts() {
+            const isSentence = currentMode === 'sentence';
+            const isInteractive = currentMode === 'interactive';
+            const enFactor = isSentence ? 0.52 : (isInteractive ? 0.60 : 0.85); // 英文平均字宽系数（越小字越大）
+            const zhFactor = isSentence ? 1.6 : (isInteractive ? 1.0 : 1.05);   // 中文平均字宽系数（越大字越小）
+            const zhCap = isSentence ? 6.5 : 12;                                 // 中文字号上限
+            // 行高权重：互动模式中文行高1.0、英文行高1.15，其余两行均1.2
+            const lhZh = isInteractive ? 1.0 : 1.2;
+            const lhEn = isInteractive ? 1.15 : 1.2;
+
+            document.querySelectorAll('.card-text').forEach(tw => {
+                try {
+                    const block = tw.querySelector('.block');
+                    const enEl = block.querySelector('.en');
+                    const zhEl = block.querySelector('.zh');
+                    if (!enEl || !zhEl) return;
+
+                    // 卡片真实渲染宽度（与正方形图片同宽），文字区可用宽/高
+                    const cardW = tw.parentElement.getBoundingClientRect().width;
+                    const textW = cardW - 8;      // 扣除左右内边距
+                    const stripH = cardW / 4 - 3; // 扣除上下内边距
+
+                    // 确定性起始字号（正常浏览器直接可用；X5会忽略小字号，由transform兜底）
+                    let enSize = Math.min(12, (textW - 1) / Math.max(1, enEl.textContent.length * enFactor));
+                    let zhSize = Math.min(zhCap, (textW - 1) / Math.max(1, zhEl.textContent.length * zhFactor));
+                    const totalH = lhZh * zhSize + lhEn * enSize + 1;
+                    if (totalH > stripH && stripH > 4) {
+                        const k = (stripH - 1) / totalH;
+                        enSize *= k;
+                        zhSize *= k;
+                    }
+                    enSize = Math.max(3, enSize);
+                    zhSize = Math.max(3, zhSize);
+                    enEl.style.fontSize = enSize + 'px';
+                    zhEl.style.fontSize = zhSize + 'px';
+
+                    // 测量实际渲染宽度/高度（含X5强制放大后的值），等比缩小到容器内
+                    const w = Math.max(enEl.scrollWidth, zhEl.scrollWidth);
+                    const h = block.offsetHeight;
+                    let s = 1;
+                    if (w > textW + 1) s = Math.min(s, (textW - 2) / w);
+                    if (h > stripH + 1) s = Math.min(s, (stripH - 2) / h);
+                    block.style.transform = s < 1 ? 'scale(' + s.toFixed(4) + ')' : '';
+                } catch (e) { /* 单卡异常不影响整体 */ }
+            });
+        }
+        document.addEventListener('DOMContentLoaded', sizeCardTexts);
+        window.addEventListener('resize', sizeCardTexts);
+        window.addEventListener('load', sizeCardTexts);
+        // X5 最小字号/字体加载可能在首帧后生效，延迟再校正一次
+        setTimeout(sizeCardTexts, 300);
+        setTimeout(sizeCardTexts, 800);
+        setTimeout(sizeCardTexts, 1500);
+
+        // ===== 音频播放与受限并发预加载 =====
+        // 微信 WebView（X5/WKWebView）在音频未就绪时，设置 currentTime 可能抛异常，
+        // 必须 try/catch 保护，否则后面的 play() 不会执行 → 点击图片无声。
+        function playAudio(audio) {
+            try { audio.currentTime = 0; } catch (e) { /* 文件未就绪，忽略 */ }
+            const p = audio.play();
+            if (p && typeof p.catch === 'function') {
+                p.catch(() => {
+                    // 播放失败（文件未加载完 / 加载被中断）：重新触发加载后重试一次
+                    retryPlay(audio);
+                });
+            }
+        }
+
+        function retryPlay(audio) {
+            let retried = false;
+            const doRetry = () => {
+                if (retried) return;
+                retried = true;
+                try { audio.currentTime = 0; } catch (e) { /* 忽略 */ }
+                const p = audio.play();
+                if (p && typeof p.catch === 'function') {
+                    p.catch(e => console.warn('Audio retry failed:', e));
+                }
+            };
+            if (audio.readyState >= 1) {
+                doRetry();
+            } else {
+                // 等文件就绪后自动补播；load() 会重新发起一次加载（对之前被掐断的请求有效）
+                audio.addEventListener('canplay', doRetry, { once: true });
+                try { audio.load(); } catch (e) { /* 忽略 */ }
+            }
+        }
+
+        // 受限并发的预加载队列：同时只加载 PRELOAD_CONCURRENCY 个，逐个完成，
+        // 避免90个文件一拥而上被移动端微信掐断，也让大多数卡片点按即响。
+        const PRELOAD_CONCURRENCY = 2;
+        const preloadQueue = [];
+        let activePreloads = 0;
+
+        function schedulePreload(audio) {
+            preloadQueue.push(audio);
+            pumpPreloads();
+        }
+
+        function pumpPreloads() {
+            while (activePreloads < PRELOAD_CONCURRENCY && preloadQueue.length > 0) {
+                const a = preloadQueue.shift();
+                if (a.dataset.preloaded) continue;
+                a.dataset.preloaded = '1';
+                activePreloads++;
+                let done = false;
+                const finish = () => {
+                    if (done) return;
+                    done = true;
+                    activePreloads--;
+                    pumpPreloads();
+                };
+                a.addEventListener('canplay', finish, { once: true });
+                a.addEventListener('error', finish, { once: true });
+                a.load();
+            }
+        }
+
+        function generateCards() {
+            container.innerHTML = '';
+            audioElements.length = 0;
+
+            const data = getModeData(currentMode);
+            const enFirst = currentMode !== 'interactive';
+
+            data.forEach((item, idx) => {
+                const i = idx + 1;
+                const card = document.createElement('div');
+                card.className = 'card';
+                
+                // 图片区：只放图，不带文字
+                const imgWrap = document.createElement('div');
+                imgWrap.className = 'card-img';
+                const img = document.createElement('img');
+                img.src = `${i}.jpg`;
+                img.alt = item.zh;
+                // 90张图改为懒加载：进入视口才下载，避免手机一次性拉取近10MB图片拖慢首屏
+                img.loading = 'lazy';
+                img.decoding = 'async';
+                imgWrap.appendChild(img);
+
+                // 文字区：单词/句子模式英文在前（英文稍大），互动模式中文在前（中文稍大）
+                const textWrap = document.createElement('div');
+                textWrap.className = 'card-text ' + (enFirst ? 'en-first' : 'zh-first');
+                textWrap.innerHTML = enFirst
+                    ? `<div class="block"><div class="fit"><div class="en">${item.en}</div></div><div class="fit"><div class="zh">${item.zh}</div></div></div>`
+                    : `<div class="block"><div class="fit"><div class="zh">${item.zh}</div></div><div class="fit"><div class="en">${item.en}</div></div></div>`;
+
+                // 音频：先不批量下载（preload=none），由下方受限并发的预加载队列逐个加载，
+                // 避免微信里90个文件同时请求被中断/超时，导致点击没声音
+                const audio = document.createElement('audio');
+                audio.preload = 'none';
+                audio.src = getAudioSrc(i, currentMode);
+                audio.id = `audio-${i}`;
+                audioElements.push(audio);
+                // 加载失败时打日志（手机上看不到控制台，但便于排查问题卡片）
+                audio.addEventListener('error', () => {
+                    console.warn('Audio load error:', audio.src);
+                });
+                schedulePreload(audio);
+
+                card.addEventListener('click', () => {
+                    if (!isActivated) {
+                        overlay.style.display = 'flex';
+                        return;
+                    }
+                    playAudio(audio);
+                });
+
+                card.appendChild(imgWrap);
+                card.appendChild(textWrap);
+                card.appendChild(audio);
+                container.appendChild(card);
+            });
+
+            // 按卡片宽度与文本长度确定性计算字号，保证单行完整显示
+            sizeCardTexts();
+        }
+
+        function setMode(mode) {
+            currentMode = mode;
+            
+            // 更新按钮高亮
+            wordBtn.classList.toggle('active', mode === 'word');
+            sentenceBtn.classList.toggle('active', mode === 'sentence');
+            interactiveBtn.classList.toggle('active', mode === 'interactive');
+
+            // 更新提示文字
+            if (mode === 'word') modeHint.textContent = '当前模式：单词';
+            else if (mode === 'sentence') modeHint.textContent = '当前模式：句子';
+            else modeHint.textContent = '当前模式：互动';
+
+            // 重建卡片：文字内容与音频随模式切换
+            generateCards();
+        }
+
+        function activatePage() {
+            isActivated = true;
+            overlay.style.display = 'none';
+            // 播放极短静音，绕过微信限制
+            const silentAudio = new Audio('data:audio/wav;base64,UklGRjIAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoAAACAgICAAIAAgACA');
+            silentAudio.play().then(() => silentAudio.pause()).catch(() => {});
+        }
+
+        wordBtn.addEventListener('click', () => setMode('word'));
+        sentenceBtn.addEventListener('click', () => setMode('sentence'));
+        interactiveBtn.addEventListener('click', () => setMode('interactive'));
+        activateBtn.addEventListener('click', activatePage);
+
+        // 初始化
+        generateCards();
+    </script>
+</body>
+</html>
